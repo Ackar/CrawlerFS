@@ -3,6 +3,7 @@ package main
 import (
   "net/http"
   "net/url"
+  "io"
   "fmt"
   "strings"
   "code.google.com/p/go.net/html"
@@ -56,41 +57,79 @@ func CreateNode(u *url.URL) (resNode *Node, existing bool) {
   return
 }
 
+var htmlSuffixes map[string]bool = map[string]bool {
+  "html" : true,
+  "htm" : true,
+  "aspx" : true,
+  "" : true,
+}
+
 // Crawl takes an url string, get all the links from that url and call
 // recursively on each readable link (HTML pages).
 func Crawl(source string) {
   fmt.Println("Scraping", source)
   sourceUrl, _ := url.Parse(source)
-  _, existing := CreateNode(sourceUrl)
+  node, existing := CreateNode(sourceUrl)
 
   if existing {
     return
   }
 
-  links := GetLinksFromHtml(source)
+  node.Url = source
+
+  resp, _ := http.Get(source)
+  // node.Size = resp.ContentLength
+  links, node.Size := GetLinksFromHtml(resp.Body)
 
   for _, link := range links {
     u, _ := url.Parse(link)
-    // FIXME
-    if !strings.HasSuffix(u.Path, ".html") && !strings.HasSuffix(u.Path, ".htm") && !strings.HasSuffix(u.Path, ".aspx") {
-      fmt.Println("ingoring ", u.Path)
-      continue
-    }
+    urlToCrawl := link
+
+    // We check if the url is on the same host, if not we skip it
     if u.IsAbs() {
-      if u.Host == sourceUrl.Host {
-        Crawl(u.String())
+      if u.Host != sourceUrl.Host {
+        continue
       }
     } else {
-      Crawl("http://" + sourceUrl.Host + "/" + u.Path)
+      urlToCrawl = "http://" + sourceUrl.Host + "/" + u.Path
+    }
+
+    // If this is a html page, we parse it, else we just need to get its size
+    suffix := GetSuffix(u.Path)
+    fmt.Println("suffix", suffix, u.Path)
+    if _, ok := htmlSuffixes[suffix]; ok {
+      Crawl(urlToCrawl)
+    } else {
+      InspectRessource(urlToCrawl)
     }
   }
 }
 
+func InspectRessource(url string) {
+  // TODO
+}
+
+func GetSuffix(path string) string {
+  res := ""
+
+  for i := len(path) - 1; i >= 0; i-- {
+    switch path[i] {
+      case '.':
+        return res
+      case '/':
+        return ""
+      default:
+        res = string(path[i]) + res
+    }
+  }
+
+  return ""
+}
+
 // GetLinksFromHtml takes an url, retrieve the content and parse the HTML to
 // find all embedded links.
-func GetLinksFromHtml(url string) []string {
-  resp, _ := http.Get(url)
-  tokenizer := html.NewTokenizer(resp.Body)
+func GetLinksFromHtml(body io.ReadCloser) []string {
+  tokenizer := html.NewTokenizer(body)
   res := []string{}
 
   for {

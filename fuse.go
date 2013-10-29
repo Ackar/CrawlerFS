@@ -22,14 +22,15 @@ type File struct {
 
 type Node struct {
   Name    string
-  Parent  *Node
+  Url     string
   Type    fuse.DirentType
+  Size    int64
   Files   map[string]*Node
 }
 
 func (n Node) Attr() fuse.Attr {
   if n.Type == fuse.DT_Dir {
-    return fuse.Attr { Mode: os.ModeDir }
+    return fuse.Attr { Mode: os.ModeDir, Size: uint64(n.Size) }
   } else {
     return fuse.Attr { Mode: 0777 }
   }
